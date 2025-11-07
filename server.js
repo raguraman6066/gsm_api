@@ -8,20 +8,32 @@ function startServer(uuidv4) {
   const fs = require("fs");
 
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT || 3000;
 
-  const UPLOADS_DIR = "/uploads";
+  // 🧠 Use the Render mount path if available
+  const UPLOADS_DIR = process.env.UPLOADS_DIR || "/uploads";
 
-  if (!fs.existsSync(UPLOADS_DIR))
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  // 🧩 Make sure it exists (only if allowed)
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      console.log("📁 Creating uploads directory:", UPLOADS_DIR);
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn(
+      "⚠️ Cannot create uploads folder — likely already mounted:",
+      err.message
+    );
+  }
 
   const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, UPLOADS_DIR),
     filename: (req, file, cb) => cb(null, uuidv4() + ".zip"),
   });
+
   const upload = multer({ storage });
 
-  // Serve uploads folder directly
+  // Serve uploaded content
   app.use("/uploads", express.static(UPLOADS_DIR));
 
   app.get("/ping", (req, res) => res.json({ message: "API working ✅" }));
@@ -38,32 +50,27 @@ function startServer(uuidv4) {
       zip.extractAllTo(extractPath, true);
       fs.unlinkSync(req.file.path);
 
-      // 🧠 Find first subfolder (inside extracted folder)
       const extractedItems = fs.readdirSync(extractPath);
       let innerFolder = "";
       if (extractedItems.length === 1) {
         const innerPath = path.join(extractPath, extractedItems[0]);
-        if (fs.lstatSync(innerPath).isDirectory()) {
+        if (fs.lstatSync(innerPath).isDirectory())
           innerFolder = extractedItems[0];
-        }
       }
 
-      // ✅ Build final URL
       const folderUrl = innerFolder
         ? `${req.protocol}://${req.get(
             "host"
           )}/uploads/${folderId}/${innerFolder}/index.html`
         : `${req.protocol}://${req.get("host")}/uploads/${folderId}/index.html`;
 
-      console.log(`[UPLOAD] Extracted → ${folderUrl}`);
+      console.log(`[UPLOAD SUCCESS] → ${folderUrl}`);
       res.json({ success: true, folderUrl });
     } catch (err) {
-      console.error("[ERROR]", err);
+      console.error("[UPLOAD ERROR]", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.listen(PORT, () =>
-    console.log(`🚀 Server running at http://localhost:${PORT}`)
-  );
+  app.listen(PORT, () => console.log(`🚀 Server running at port ${PORT}`));
 }
